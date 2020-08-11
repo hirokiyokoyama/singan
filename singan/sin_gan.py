@@ -1,4 +1,5 @@
 import tensorflow as tf
+from .patch_gan import PatchGAN
 
 class SinGAN(tf.Module):
   def __init__(self,
