@@ -21,6 +21,7 @@ if __name__=='__main__':
   top = (h-size)//2
   left = (w-size)//2
   image = image[top:top+size,left:left+size,:]
+  image = (image / 255.) * 2. - 1.
   image = tf.constant(image)[tf.newaxis]
   image = tf.image.resize(image, gan.default_output_size[-1])
   
