@@ -1,26 +1,42 @@
 import tensorflow as tf
 
-class Conv2DSpectralNormalization(tf.keras.layers.Conv2D):
-  def __init__(self, *args, **kwargs):
-    kwargs['kernel_initializer'] = tf.keras.initializers.TruncatedNormal()
-    super().__init__(*args, **kwargs)
+class SpectralNormalization(tf.keras.layers.Layer):
+  def __init__(self, layer,
+               kernel_name = 'kernel',
+               input_dims = [0,1,2],
+               output_dims = [3],
+               iteration = 1):
+    super().__init__()
+    self.layer = layer
+    self.kernel_name = kernel_name
+    self.input_dims = input_dims
+    self.output_dims = output_dims
+    self.iteration = iteration
 
   def build(self, input_shape):
-    super().build(input_shape)
+    self.layer.build(input_shape)
+    self.kernel = getattr(self.layer, self.kernel_name)
     shape = self.kernel.shape.as_list()
-    self.u = self.add_weight("u", [1, self.filters], initializer=tf.initializers.TruncatedNormal(), trainable=False)
-  
+    u_dim = 1
+    for i in self.output_dims:
+      u_dim *= shape[i]
+    self.u = self.add_weight("u", [1, u_dim],
+                             initializer = tf.initializers.TruncatedNormal(),
+                             trainable = False)
+    self.u_dim = u_dim
+
   def call(self, x, training=None):
     if training:
-      self.kernel.assign(self.spectral_norm())
-    return super().call(x)
+      self.normalize_kernel()
+    return self.layer.call(x)
 
-  def spectral_norm(self, iteration=1):
-    w = tf.reshape(self.kernel, [-1, self.filters])
+  def normalize_kernel(self):
+    w = tf.transpose(self.kernel, self.input_dims+self.output_dims)
+    w = tf.reshape(w, [-1, self.u_dim])
 
     u_hat = self.u
     v_hat = None
-    for i in range(iteration): # power iteration
+    for i in range(self.iteration): # power iteration
       v_ = tf.matmul(u_hat, w, transpose_b=True)
       v_hat = tf.nn.l2_normalize(v_)
       u_ = tf.matmul(v_hat, w)
@@ -31,7 +47,8 @@ class Conv2DSpectralNormalization(tf.keras.layers.Conv2D):
     self.u.assign(u_hat)
 
     sigma = tf.matmul(tf.matmul(v_hat, w), u_hat, transpose_b=True)
-    return tf.reshape(w / sigma, self.kernel.shape)
+    new_kernel = tf.reshape(w / sigma, self.kernel.shape)
+    self.kernel.assign(new_kernel)
 
 def create_network(
     n = 5,
@@ -61,8 +78,13 @@ def create_generator(stage):
   return tf.keras.Model([x,z], y)
 
 def create_discriminator(stage):
+  def conv_fn(*args, **kwargs):
+    conv = tf.keras.layers.Conv2D(*args, **kwargs)
+    conv = SpectralNormalization(conv)
+    return conv
+
   return create_network(
       n = 5,
       channels = 32,
       output_channels = 1,
-      conv_fn = Conv2DSpectralNormalization)
+      conv_fn = conv_fn)
