@@ -22,7 +22,9 @@ class SinGAN(tf.Module):
       self.discriminators = [create_discriminator(i) for i,_ in enumerate(self.scales)]
 
     shape = tf.concat([[1],self.default_output_size[0],[3]], axis=0)
-    self.seed_image = tf.random.normal(shape)
+    self.seed_image = tf.Variable(
+        tf.random.normal(shape),
+        trainable = False)
 
     self.gans = [PatchGAN(g, d) for g, d in zip(self.generators, self.discriminators)]
 
@@ -149,6 +151,7 @@ class SinGAN(tf.Module):
       save_dict[f'generator_opt_{i}'] = gan.g_opt
       save_dict[f'discriminator_{i}'] = gan.discriminator
       save_dict[f'discriminator_opt_{i}'] = gan.d_opt
+    save_dict['seed_image'] = self.seed_image
     return tf.train.Checkpoint(**save_dict)
 
   def save(self, save_dir):

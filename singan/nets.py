@@ -54,14 +54,30 @@ def create_network(
     n = 5,
     channels = 32,
     output_channels = 3,
-    conv_fn = tf.keras.layers.Conv2D):
+    conv_fn = tf.keras.layers.Conv2D,
+    depthwise_conv_fn = tf.keras.layers.DepthwiseConv2D,
+    bn_scale = True):
   x = tf.keras.Input([None,None,3])
   
   y = x
-  for i in range(n-1):
-    y = conv_fn(channels, 3, padding='SAME', use_bias=False)(y)
-    y = tf.keras.layers.BatchNormalization()(y)
+  y = conv_fn(channels, 3, padding='SAME', use_bias=False)(y)
+  y = tf.keras.layers.BatchNormalization(scale=bn_scale)(y)
+  y = tf.keras.layers.LeakyReLU()(y)
+
+  for i in range(n-2):
+    _y = y
+    y = conv_fn(channels*6, 1, padding='SAME', use_bias=False)(y)
+    y = tf.keras.layers.BatchNormalization(scale=bn_scale)(y)
     y = tf.keras.layers.LeakyReLU()(y)
+    y = depthwise_conv_fn(3, padding='SAME', use_bias=False)(y)
+    y = tf.keras.layers.BatchNormalization(scale=bn_scale)(y)
+    y = tf.keras.layers.LeakyReLU()(y)
+    y = conv_fn(channels, 1, padding='SAME', use_bias=False)(y)
+    y = tf.keras.layers.BatchNormalization(scale=bn_scale)(y)
+    #y = tf.keras.layers.LeakyReLU()(y)
+    y = tf.keras.layers.Dropout(0.2, noise_shape=[None,1,1,1])(y)
+    y = y + _y
+
   y = conv_fn(output_channels, 3, padding='SAME', use_bias=True)(y)
 
   return tf.keras.Model(x, y)
@@ -83,8 +99,19 @@ def create_discriminator(stage):
     conv = SpectralNormalization(conv)
     return conv
 
+  def depthwise_conv_fn(*args, **kwargs):
+    conv = tf.keras.layers.DepthwiseConv2D(*args, **kwargs)
+    conv = SpectralNormalization(conv,
+                                 kernel_name = 'depthwise_kernel',
+                                 input_dims = [0,1],
+                                 output_dims = [2,3])
+    return conv
+
   return create_network(
       n = 5,
       channels = 32,
       output_channels = 1,
-      conv_fn = conv_fn)
+      conv_fn = conv_fn,
+      depthwise_conv_fn = depthwise_conv_fn,
+      bn_scale = False)
+
